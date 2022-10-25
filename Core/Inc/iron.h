@@ -10,12 +10,13 @@
 #include "pid.h"
 #include "settings.h"
 
-#define PWM_DETECT_TIME   5                                    // Pulse before reading adc, to detect tip presence. In uS
+#define TIP_DETECT_TIME         5                           // Pulse before reading adc, to detect tip presence. In uS
+#define RUNAWAY_DEPTH           3                           // History count of power values stored to compute the average power for runaway monitor
+#define RUNAWAY_RESET_CYCLES    3                           // Cycles to bypass runaway check when temperature was changed
 
 typedef void (*setTemperatureReachedCallback)(uint16_t);
-
-
 typedef void (*currentModeChanged)(uint8_t);
+
 typedef union{
   uint8_t Flags;                                            // Flag for errors (wrong iron connection, NTC, internal failure...)
   struct{
@@ -29,58 +30,23 @@ typedef union{
     unsigned  active:1;                                     // Errors active flag
   };
 }IronError_t;
-# define ErrorMask    (uint8_t)0b11111                      // mask for used error bit fields (skipping global flag)
 
-#define _NOERROR      0
-#define _NO_IRON      1
-#define _NTC_HIGH     2
-#define _NTC_LOW      4
-#define _V_LOW        8
-#define _SAFE_MODE    16
-#define _ACTIVE       128
+#define ErrorMask    (uint8_t)0b11111                      // mask for used error bit fields (skipping global flag)
 
-typedef struct {
+#define FLAG_NOERROR      0
+#define FLAG_NO_IRON      1
+#define FLAG_NTC_HIGH     2
+#define FLAG_NTC_LOW      4
+#define FLAG_V_LOW        8
+#define FLAG_SAFE_MODE    16
+#define FLAG_ACTIVE       128
 
-  uint8_t             Pwm_Channel;                          // PWM channel
-  uint8_t             CurrentIronPower;                     // Last output power
-  uint8_t             CurrentMode;                          // Actual working mode (Standby, Sleep, Normal, Boost)
-  uint8_t             changeMode;                           // change working mode to (Standby, Sleep, Normal, Boost)
-  uint8_t             RunawayLevel;                         // Runaway actual level
-  uint8_t             prevRunawayLevel;                     // Runaway previous level
-  uint8_t             RunawayStatus;                        // Runaway triggered flag
-  uint8_t             calibrating;                          // Flag to indicate calibration state (don't save temperature settings)
-  uint8_t             updateStandMode;                      // Flag to indicate the stand mode must be changed
-  uint8_t             shakeActive;                          // Flag to indicate handle movement
-  uint8_t             temperatureReached;                   // Flag for temperature calibration
-  uint8_t             DebugMode;                            // Flag to indicate Debug is enabled
-  uint8_t             updatePwm;                            // Flag to indicate PWM need to be updated
-  IronError_t         Error;                                // Error flags
-  uint8_t             beforeErrorMode;                      // Active mode before the error.
-
-  uint16_t            Pwm_Period;                           // PWM period
-  uint16_t            Pwm_Max;                              // Max PWM output for power limit
-  int16_t             UserSetTemperature;                   // Run mode user setpoint
-  int16_t             CurrentSetTemperature;                // Actual set temperature (Setpoint)
-  int16_t             Debug_SetTemperature;                 // Debug mode temperature
-
-  uint32_t            Pwm_Out;                              // Last calculated PWM value
-  uint32_t            LastModeChangeTime;                   // Last time the mode was changed (To provide debouncing)
-  uint32_t            LastErrorTime;                        // last time iron error was detected
-  uint32_t            lastShakeTime;                        // last time iron handle was moved (In shake mode)
-  uint32_t            CurrentModeTimer;                     // Time since actual mode was set
-  uint32_t            RunawayTimer;                         // Runaway timer
-
-  TIM_HandleTypeDef   *Read_Timer;                          // Pointer to the Read timer
-  TIM_HandleTypeDef   *Pwm_Timer;                           // Pointer to the PWM timer
-}iron_t;
-
-
-extern volatile iron_t Iron;
 void readWake(void);
 bool IronWake(bool source);
 void resetIronError(void);
 void checkIronError(void);
-bool GetIronError(void);
+bool isIronInError(void);
+IronError_t getIronErrorFlags(void);
 void updatePowerLimit(void);
 void runAwayCheck(void);
 void setSafeMode(bool mode);
@@ -90,7 +56,6 @@ void setModefromStand(uint8_t mode);
 void setUserTemperature(uint16_t temperature);
 uint16_t getUserTemperature(void);
 uint8_t getCurrentMode(void);
-uint16_t getCurrentTemperature();
 int8_t getCurrentPower();
 void initTimers(void);
 void setPwmMul(uint16_t mult);
@@ -98,17 +63,28 @@ void setReadDelay(uint16_t delay);
 void setReadPeriod(uint16_t period);
 void setNoIronValue(uint16_t noiron);
 void setSystemTempUnit(bool unit);
+bool getSystemTempUnit(void);
 void addSetTemperatureReachedCallback(setTemperatureReachedCallback callback);
 void addModeChangedCallback(currentModeChanged callback);
 void handleIron(void);
 void ironInit(TIM_HandleTypeDef *delaytimer, TIM_HandleTypeDef *pwmtimer, uint32_t pwmchannel);
 uint8_t getIronOn();
-void setDebugTemp(uint16_t value);
-uint16_t getDebugTemp(void);
-void setDebugMode(uint8_t value);
-uint8_t getDebugMode(void);
 void setCalibrationMode(uint8_t mode);
-uint8_t getCalibrationMode(void);
+bool isIronInCalibrationMode(void);
 void configurePWMpin(uint8_t mode);
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *_htim);
+TIM_HandleTypeDef* getIronReadTimer(void);
+TIM_HandleTypeDef* getIronPwmTimer(void);
+void ironSchedulePwmUpdate(void);
+bool getBootCompleteFlag(void);
+void setBootCompleteFlag(void);
+uint32_t getIronPwmOutValue();
+uint16_t getIronTargetTemperature(void);
+uint32_t getIronCurrentModeTimer(void);
+bool isIronTargetTempReached(void);
+bool getIronShakeFlag(void);
+void clearIronShakeFlag(void);
+uint32_t getIronLastShakeTime(void);
+uint16_t getUserSetTemperature();
+
 #endif /* IRON_H_ */

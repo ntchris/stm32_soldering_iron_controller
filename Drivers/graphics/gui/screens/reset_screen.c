@@ -16,7 +16,7 @@ resStatus_t resStatus;
 
 
 static int cancelReset(widget_t *w) {
-  return screen_reset;
+  return last_scr;
 }
 static int doReset(widget_t *w) {
   switch(resStatus){
@@ -57,7 +57,7 @@ static int doFactoryReset(widget_t *w, RE_Rotation_t input) {
 
 static void reset_onEnter(screen_t *scr){
   if(scr==&Screen_system){
-    comboResetIndex(Screen_reset.widgets);
+    comboResetIndex(Screen_reset.current_widget);
   }
 }
 
@@ -84,7 +84,7 @@ static void reset_create(screen_t *scr){
 
 static void reset_confirmation_init(screen_t *scr){
   default_init(scr);
-  //FillBuffer(BLACK, fill_dma);                              // Manually clear the screen
+  //fillBuffer(BLACK, fill_dma);                              // Manually clear the screen
   //Screen_reset_confirmation.refresh=screen_Erased;          // Set to already cleared so it doesn't get erased automatically
 
   u8g2_SetFont(&u8g2,u8g2_font_menu);
@@ -134,7 +134,7 @@ static void reset_confirmation_create(screen_t *scr){
   ((button_widget_t*)w->content)->font= u8g2_font_menu;
   w->posY = 48;
   w->width = 65;
-  w->posX = OledWidth - w->width -1;
+  w->posX = displayWidth - w->width -1;
 }
 
 

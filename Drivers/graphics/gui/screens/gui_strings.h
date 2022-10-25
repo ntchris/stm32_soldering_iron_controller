@@ -5,8 +5,8 @@
  *      Author: David
  */
 
-#ifndef GRAPHICS_GUI_STRINGS_H_
-#define GRAPHICS_GUI_STRINGS_H_
+#ifndef _GUI_STRINGS_H_
+#define _GUI_STRINGS_H_
 
 
 #include "settings.h"
@@ -15,7 +15,6 @@ typedef struct{
   char * boot_firstBoot;
   char * boot_Profile;
 
-  char * main_error_noIron;
   char * main_error_noIron_Detected;
   char * main_error_failsafe;
   char * main_error_NTC_high;
@@ -34,14 +33,38 @@ typedef struct{
   char * settings_EDIT_TIPS;
   char * settings_CALIBRATION;
   char * settings_EXIT;
+#ifdef ENABLE_ADDONS
+  char * settings_ADDONS;
+#endif
+
+#ifdef ENABLE_ADDON_FUME_EXTRACTOR
+  char * FUME_EXTRACTOR_Title;
+  char * FUME_EXTRACTOR_Mode;
+  char * FUME_EXTRACTOR_Modes[3];
+  char * FUME_EXTRACTOR_AfterRun;
+  char * FUME_EXTRACTOR_AfterRunUnit;
+#endif
+
+#ifdef ENABLE_ADDON_SWITCH_OFF_REMINDER
+  char * SWITCH_OFF_REMINDER_Title;
+  char * SWITCH_OFF_REMINDER_EnableDisableOption;
+  char * SWITCH_OFF_REMINDER_InactivityDelay;
+  char * SWITCH_OFF_REMINDER_ReminderPeriod;
+  char * SWITCH_OFF_REMINDER_TimeUnit;
+  char * SWITCH_OFF_REMINDER_BeepType;
+  char * SWITCH_OFF_REMINDER_BeepTypes[3];
+#endif
 
   char * IRON_Max_Temp;
   char * IRON_Min_Temp;
-  char * IRON_User_Temp;
+  char * IRON_Default_Temp;
   char * IRON_Standby;
   char * IRON_Sleep;
   char * IRON_Boost;
   char * IRON_Boost_Add;
+  char * IRON_Wake_Mode;
+  char * IRON_Shake_Filtering;
+  char * IRON_Stand_Mode;
   char * IRON_Power;
   char * IRON_Heater;
   char * IRON_ADC_Time;
@@ -49,7 +72,8 @@ typedef struct{
   char * IRON_No_Iron;
   char * IRON_Error_Timeout;
   char * IRON_Error_Resume_Mode;
-  char * IRON_Filter_Settings;
+  char * IRON_FILTER_MENU;
+  char * IRON_NTC_MENU;
 
   char * FILTER_Filter;
   char * FILTER__Threshold;
@@ -59,13 +83,6 @@ typedef struct{
   char * FILTER_Reset_limit;
 
   char * SYSTEM_Profile;
-  char * SYSTEM_Oled_Offset;
-  char * SYSTEM_Oled_Contrast;
-  char * SYSTEM_Oled_Dim;
-  char * SYSTEM_Oled_Dim_inSleep;
-  char * SYSTEM_Wake_Mode;
-  char * SYSTEM_Shake_Filtering;
-  char * SYSTEM_Stand_Mode;
   char * SYSTEM_Boot;
   char * SYSTEM_Button_Wake;
   char * SYSTEM_Shake_Wake;
@@ -78,8 +95,23 @@ typedef struct{
   char * SYSTEM_LVP;
   char * SYSTEM_Gui_Time;
   char * SYSTEM_DEBUG;
-  char * SYSTEM_NTC_MENU;
   char * SYSTEM_RESET_MENU;
+  char * SYSTEM_Remember;
+  char * SYSTEM_RememberLastProfile;
+  char * SYSTEM_RememberLastTip;
+#ifdef HAS_BATTERY
+  char * SYSTEM_RememberLastTemp;
+#endif
+
+  char * SYSTEM_DISPLAY_MENU;
+
+  char * DISPLAY_ContrastOrBrightness;
+  char * DISPLAY_Offset;
+  char * DISPLAY_Xflip;
+  char * DISPLAY_Yflip;
+  char * DISPLAY_Ratio;
+  char * DISPLAY_Dim;
+  char * DISPLAY_Dim_inSleep;
 
   char * NTC_Enable_NTC;
   char * NTC_Pull;
@@ -158,8 +190,8 @@ typedef struct{
 }strings_t;
 
 extern const strings_t strings[LANGUAGE_COUNT];
-extern char * tempUnit[2];
-extern char *profileStr[ProfileSize];
-extern char *Langs[LANGUAGE_COUNT];
+extern char * const tempUnit[2];
+extern char * const profileStr[NUM_PROFILES];
+extern char * const Langs[LANGUAGE_COUNT];
 
 #endif /* GRAPHICS_GUI_STRINGS_H_ */

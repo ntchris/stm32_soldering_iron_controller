@@ -7,6 +7,8 @@ Currently, these are the available languages:
 - **English**<br>
 - **Russian**<br>
 - **Swedish**<br>
+- **German**<br>
+- **Turkish**<br>
 
 You can select between the following profiles:
 - **Hakko T12** (T15 Series in North America & EU) This is the handle normally used with these controllers.<br>
@@ -61,16 +63,16 @@ The PID (Proportional, Integral, Derivative) algorithm determines the PWM duty c
 - **Sleep/Standby modes**<br>
   You can manually enter lower power modes by clicking and rotating counter-clockwise.<br>
   The sequence would be [run/boost mode]->[standby mode]->[sleep mode].<br>
-  If button wake is enabled, any encoder activity will resume normal mode. Othwerwise only the display brightness will be restored.<br>
-  To wake up you can make a click (If button wake is enabled) or move the handle (If shake wake is enabled or in stand mode).<br>  
+  If button wake is enabled, encoder activity will resume normal mode, otherwise only the display brightness will be restored.<br>
+  Wake-up rouces are the enconder (If enabled) or handle wake input sensor (If shake wake is enabled or in stand mode).<br>
+  The encoder only resumes normal mode when adjusting the setpoint or clicking in the temperature screen (Not when selecting tips or navigating in the menu)<br>
 - **Boost mode**<br>
   Rotate the encoder to show up the setpoint adjustment and click within 1 second to trigger boost mode.<br>
-  If more than 1 second has passed, clicking won't trigger boost mode.<br>
-  Clicking or rotating the encoder will return to normal mode.<br>
+  If more than 1 second has passed, boost mode won't be triggered, this is to prevent accidental triggering when adjusting the temperature.<br>
+  While boost mode is enabled, clicking or rotating the encoder will return to normal mode.<br>
 - **Tip selection**<br>
-  Click and rotate clockwise to show the tip selection. The bottom left corner will be highlighted.<br>
-  Rotate to change the selected tip, click again to return, or long-click enter the tip settings.<br>
-  It will return to normal mode after 5 seconds of inactivity.<br>
+  Click and rotate clockwise to show the tip selection. The tip name label will be highlighted.<br>
+  Rotate to change the selected tip, click or wait 2 seconds to select and return to normal mode. Long-click to enter the tip settings.<br>
 - **System menu**<br>
   A long click will enter the system menu (Except while in tip selection/setpoint adjustment).<br>
 
@@ -82,17 +84,28 @@ Long-clicking will have the same effect.<br>
 In most menus, rotate anti-clockwise while pushing the button to quickly return to previous screen.<br>
 
 ### IRON
-Iron settings control the operation of the handle/tips. <br>
+Iron settings control the operation of the handle/tips. The settings here apply only for the currently selected profile. In other words, each profile has its own dataset. Switching between profiles can be done in the **System menu** <br>
   - **Max temperature**<br>
 Upper adjustable temperature limit.<br>
   - **Min temperature**<br>
 Lower adjustable temperature limit.<br>
-  - **User temperature**<br>
-Temperature applied at boot. To reduce flash wear, setpoint adjustment is not saved!<br>
+  - **Dflt. temperature**<br>
+Default temperature applied at boot. If the board has no batter backup (or disabled) the last temperature is not saved (to reduce flash wear), the station starts up with the one set here. If the board has a backup battery and the *remember last set temp* is enabled, then this setting is ignored expect when the battery fails.<br>
   - **Boost time**<br>
 Boost mode run time before resuming normal mode.<br>
   - **Boost temperature**<br>
 Temperature offset applied in boost mode. It's added to the current temperature and limited to system maximum temperature.<br>
+  - **Wake mode**<br>
+How to detect activity. SHAKE or STAND.<br>
+SHAKE uses a motion sensor present in T12 handles, shake or hold the handle tip up to wake.<br>
+STAND uses the same input, but disconnected from the handle. Must be shorted to gnd when the handle is in the stand.<br>
+(Stand mode operation operation: Shorted to gnd = sleep/standby, open = run ).<br>
+  - **Filter**<br>
+Filters the wake input to make it less sensitive, so it doesn't get waken by any little noise or slight  movement.<br>
+This option is disabled in stand mode.<br>
+  - **Stand mode**<br>
+Sets the mode that will be applied when the handle is put in the stand (__STANDBY__ or __SLEEP__).<br>
+This option is disabled in shake input mode.<br>
   - **Standby time**<br>
 If there is no soldering activity for this period, the controller will reduce the temperature to extend the tip life and reduce power waste.<br>
 Setting this option to 0 will disable standby mode, the station will switch to sleep state.<br>
@@ -102,18 +115,33 @@ Temperature applied in standby mode.<br>
 If there is no soldering activity for this period, the controller will "sleep" and stop providing power to the tip.<br>
 This helps increase tip lifetime reduce power waste. Activity (e.g. shaking the handle for a T12) will wake it up and heating will resume.<br>
 This timer cannot be disabled.<br>
+  - **Boost time**<br>
+Boost mode run time before resuming normal mode.<br>
+  - **Boost increase**<br>
+Temperature increase applied in boost mode. It's added to the current temperature and limited to system maximum temperature.<br>
+  - **Wake mode**<br>
+WAKE input working mode (__SHAKE__ or __STAND__).<br>
+SHAKE uses a motion sensor present in T12 handles, the station will keep working while motion is detected.<br>
+STAND uses the same input, but disconnected from the handle. Must be shorted to gnd when the handle is in the stand.<br>
+(Stand mode operation operation: Shorted to gnd = sleep/standby, open = run ).<br>
+  - **Wake Filter**<br>
+Filters the wake input to make it less sensitive, so it doesn't get waken by any little noise or slight movement.<br>
+This option is disabled in stand wake mode.<br>
+  - **Stand mode**<br>
+Sets the mode that will be applied when the handle is put in the stand (__STANDBY__ or __SLEEP__).<br>
+This option is disabled in shake wake mode.<br>
   - **Power**<br>
 The maximum power which will be delivered to the tip.<br>
 The limit is done by adjusting the maximum PWM duty cycle based on the power supply voltage and the heater resistance.<br>
   - **Heater (resistance)**<br>
 The resistance of the tip's heating element in ohms, used for the power limitation. There is normally no need to change this from the default.<br>
   - **ADC Time**<br>
-Sets the ADC reading period. The controller stops disables the PWM and runs the ADC. Default 200 ms.<br>
+Sets the ADC reading period. The controller disables the power and runs the ADC at this frequency. Default 200 ms.<br>
 It also sets the base PWM frequency. The PWM multiplier uses this base.<br>
   - **(ADC) Delay**<br>
-When the temperature going to be measured, the PWM is disabled.<br>
-This delay is needed to have a clean reading of the thermocouple. If the delay is too low, it will read switching noise and be very unstable.<br>
-If you get random spikes in the temperature reading, try increasing this value. 20mS is usually more than enough.<br>
+After turning off the power, a small delay is required to get a clean signal before the ADC reads the temperature.
+If the delay is too low, it will read switching noise and be very unstable.<br>
+If you get random spikes in the temperature, try increasing this value. 20mS is usually more than enough.<br>
 There are other factors that could cause unstability, like poor circuit design, power supply noise or bad quality parts.<br>
 Default 20 ms.<br>
 <pre>
@@ -126,11 +154,12 @@ Sets the PWM period, using the formula ADC Time/multiplier.<br>
 Default: x1.<br>
   - **No iron**<br>
 Sets the ADC reading threshold that detects when there's no iron present.<br>
-When the iron is not inserted, usually the measured temperature will read at or close to maximum ADC range(4095).<br>
+When the iron is not inserted, usually the reading will be close to the maximum ADC range(4095).<br>
 Values >4095 will disable "no iron" detection.<br>
 Default 4000, max 4096.<br>
   - **Error timeout**<br>
 Time to wait after an error has gone before resuming normal operation.<br>
+This is also useful to provide additional time when inserting a new tip, so the power is delayed.<br>
   - **Error resume**<br>
 Set the mode the station will be set after errors are no longer present: Sleep, Run, Last mode.<br>
   - **FILTER SETTINGS**<br>
@@ -151,6 +180,22 @@ This is the minimum filtering coefficient that the system will be allowed to use
     - **Reset limit**<br>
 Exceeding this limit will instantly reset the filter and use the current reading.<br>
 This is used for huge differences, usually when the tip is removed or plugged in, to allow instant response from the system.<br>
+  - **NTC MENU**<br>
+Adjust NTC settings:<br>
+    - **Pull mode**<br>
+Adjust as your circuit: Pull up or pull down.<br>
+    - **Pull resistance**<br>
+    - **NTC Detect** : Enables or disables automatic switching between 2 NTC values (typically 10K and 100K).<br>
+        
+    	OFF: Fixed NTC values:<br>
+        - **NTC resistance**<br>
+      	- **NTC beta coefficient**<br>
+      	
+    	ON: Two NTC values:<br>
+      	- **Higher NTC value**<br>
+      	- **Higher NTC Beta**<br>
+      	- **Lower NTC value**<br>
+      	- **Lower NTC Beta**<br>
     - **Back**<br>
 Return to iron menu.<br>
   - **Back**<br>
@@ -159,13 +204,13 @@ Return to system menu.<br>
 ---
 
 ### SYSTEM
-General settings for the controller.<br>
+General global settings for the controller.<br>
   - **Language**<br>
 Sets the display language.<br>
   - **Profile**<br>
-Sets which iron profile (__T12__, __C210__, __C245__) to use.<br>
-  - **Contrast**<br>
-Screen Contrast/brightness.<br>
+Sets which iron profile (__T12__, __C210__, __C245__) to use. Each profile has its own dataset (including the list of tips). <br>
+  - **Brightness**<br>
+Screen brightness.<br>
   - **Offset**<br>
 Screen offset. This can accomodate the different screens which the controllers have come with. Use it to center the display on the screen.<br>
   - **Dimmer**<br>
@@ -180,17 +225,6 @@ Allows to turn off the screen in sleep or error modes. This option is disabled i
 For safety reasons,the screen will only turn off when the iron temperature is below 100°C.<br>
 	- OFF: In sleep mode, the screen turns off after dimming.<br>
 	- ON: The screen stays on at low brightness.<br>
-  - **Wake mode**<br>
-How to detect activity. SHAKE or STAND.<br>
-SHAKE uses a motion sensor present in T12 handles, shake or hold the handle tip up to wake.<br>
-STAND uses the same input, but disconnected from the handle. Must be shorted to gnd when the handle is in the stand.<br>
-(Stand mode operation operation: Shorted to gnd = sleep/standby, open = run ).<br>
-  - **Filter**<br>
-Filters the wake input to make it less sensitive, so it doesn't get waken by any little noise or slight  movement.<br>
-This option is disabled in stand mode.<br>
-  - **Stand mode**<br>
-Sets the mode that will be applied when the handle is put in the stand (__STANDBY__ or __SLEEP__).<br>
-This option is disabled in shake input mode.<br>
   - **Boot**<br>
 Operation mode when powered on (__RUN__, __STANDBY__ or __SLEEP__).<br>
 This option is disabled in stand mode.<br>
@@ -217,6 +251,11 @@ Sets the system temperature in Celsius or Fahrenheit.<br>
 Step for adjusting tip temperature in the main screen.<br>
  - **Big Step**<br>
 Big step for adjusting tip temperature in the main screen, when the encoder is rotated fast.<br>
+ - **Threshold for widget de-noiser**<br>
+The screen widget will ignore the real temperature and show the setpoint if the deviation is lower than this value.<br>
+Ex. Using value of 5, the screen will ignore changes of ±5°(C/F). Useful if your controller readings are noisy.<br>
+A value of 0 will disable the threshold, always showing the real remperature.<br>
+This is not applied to the plot graph.<br>
   - **LVP**<br>
 Adjust Low voltage protection.<br>
   - **GUI Time**<br>
@@ -226,6 +265,10 @@ If the display readings were updated at the same speed, it would be impossible t
 This setting defines the time in mS where the main screen readings are updated (voltage, temperatures).<br>
 The effective update rate will be limited by the ADC read frequency.<br> 
 Use a higher setting for less "flickery" display (more steady values).<br>
+  - **Remember last profile/tip/temp**<br>
+If set to *ON* the station will remember the last used profile/tip/temp between power cycles. Enabling these increases flash wear if the board has no backup battery. Saving the last used temperature is only available if the board has a battery.<br>
+If set to *OFF*, the station will default back to the last saved profile or selected tip and the default temperature on the next power cycle. If you want to change the default, set the given *remember* option to *ON*, make your change in the other menus (profile or select a different tip), exit to the main screen, wait 10 second (the controller writes the settings in the background), then switch the *remember* option to *OFF* again.<br>
+Keeping the last used temperature is only available with a backup battery. The last used temperature and tip is profile specific. If you don't change the profile and tip that often, you can leave these settings *ON*, but if you change the tip/profile frequently it is recommended to switch it *OFF*. The controller has a minimum guaranteed 10000 write cycles to the flash.
   - **DEBUG**<br>
 Enable debugging menu.<br>
   - **RESET MENU**<br>
@@ -238,22 +281,29 @@ Reset the current profile (iron/tips) to default.<br>
 Reset all profiles to default.<br>
     - **All**<br>
 Reset everything.<br>
-  - **NTC MENU**<br>
-Adjust NTC settings:<br>
-    - **Pull mode**<br>
-Adjust as your circuit: Pull up or pull down.<br>
-    - **Pull resistance**<br>
-    - **NTC Detect** : Enables or disables automatic switching between 2 NTC values (typically 10K and 100K).<br>
-        
-    	OFF: Fixed NTC values:<br>
-        - **NTC resistance**<br>
-      	- **NTC beta coefficient**<br>
-      	
-    	ON: Two NTC values:<br>
-      	- **Higher NTC value**<br>
-      	- **Higher NTC Beta**<br>
-      	- **Lower NTC value**<br>
-      	- **Lower NTC Beta**<br>
+  - **DISPLAY**<br>
+Adjust the display settings:<br>
+    - **Contrast**<br>
+Screen Contrast/brightness.<br>
+    - **Offset**<br>
+This adjustment will modify the horizontal position.<br>
+Some screens have different internal layout, shifting the picture position, this will fix it.<br>
+    - **X flip**<br>
+Toggles screen horizontal flip.<br>
+    - **Y flip**<br>
+Toggles screen vertical flip.<br>
+    - **Dimmer**<br>
+Fades the display after a timeout.
+	    - OFF: Never dim the screen.<br>
+    	- SLP: Dim only in low power modes (Standby, Sleep, Error).<br>
+    	- ALL: Dim also in run mode.<br>
+    - **Dimmer Delay**<br>
+Sets the dimmer timeout. This option is disabled when the dimmer is set to OFF.<br>
+    - **Dimmer, in sleep mode**<br>
+Allows to turn off the screen in sleep or error modes. This option is disabled when the dimmer is set to OFF.<br>
+For safety reasons,the screen will only turn off when the iron temperature is below 100°C.<br>
+    	- OFF: In sleep mode, the screen turns off after dimming.<br>
+    	- ON: The screen stays on at low brightness.<br>
   - **SW:**<br>
 Displays the current software version. Actually, it's the build date.<br>
   - **HW:**<br>
@@ -268,6 +318,8 @@ Different tips may have different characteristics. Tips may be added or edited h
 Select a tip to enter tip settings edit screen, or select Add New to create a new tip.<br>
 The new tip will be created by copying the PID/calibration settings from the first in the system.<br>
 Each profile (T12, C245, C210) can store up to 20 tips.<br>
+You can also set the working tip by long-clicking over it.<br>
+Tips will be automatically sorted by name after adding/removing/modifying.<br>
 
 ### EDIT TIP SETTINGS
 This menu allows Tip name editing, copying, deleting, PID tuning and adjustment of stored tip calibration values.<br>
@@ -277,6 +329,8 @@ Calibration values are not meant for doing manual calibrations, only to restore 
 Use calibration for optimal results.<br>
   - **TIP NAME**<br>
 Shows the tip name, click on it to edit the name.<br>
+Keep clicking to switch to the next characters, it will exit editing mode when clicking in the last character.<br>
+Additionally, you can navigate to any position using rotate-while-pressing method.<br>
   - **PID Kp**<br> 
 The proportional term, changes the PWM duty cycle based on how far the measured temperature is from the desired temperature.<br>
   - **PID Ki**<br>
@@ -289,13 +343,12 @@ The integral accumulator higher limit.<br>
 The integral accumulator lower limit. As the system can't do anything to actively cool down the tip, it's usually set to 0.<br>
   - **Cal250**<br>
 The stored value for 250ºC calibration.<br>
-  - **Cal350**<br>
-The stored value for 350ºC calibration.<br>
-  - **Cal450**<br>
-The stored value for 450ºC calibration.<br>
+  - **Cal400**<br>
+The stored value for 400ºC calibration.<br>
   - **SAVE**<br>
 Save the tip settings.<br>
 This option will be disabled if the tip name is empty or already exists.<br>
+If this is a new tip then it is automatically selected as the active one.<br>
   - **COPY**<br>
 Copy this tip into a new slot.<br>
 This option will be disabled if already copying the tip or when there are no free slots left.<br>
@@ -308,7 +361,10 @@ Discard any changes and return.<br>
 ---
 
 ### CALIBRATION
-When entering this menu, the power is removed from the tip. For best calibration results, insert a cold tip now.<br>
+When entering this menu, the power is removed from the tip. For best calibration results, insert a cold tip now (Before entering any sub-menu).<br>
+You can start your station without tip to prevent it from heating up, then enter CALIBRATION, insert the tip and calibrate it.<br>
+Using a cold tip is only critical for the amplifier offset calibration (SETTINGS). If normal calibration works (START) or zero set is already adjusted, it's not required.<br>
+START and SETTINGS menus will show warning message if the tip was removed or not detected and then return to main calibration menu.<br>
   - **START**<br>
 Requires a tip thermometer (e.g. Hakko FG-100 or similar). Calibrates the current tip at temperatures of 250 and 400°C.<br>
 Wait for tip temperature to settle (When the thermomether reading stops moving), it can take up to 20 seconds in some cases.<br>
@@ -324,7 +380,7 @@ If by any means the 250°C calibration needs to go higher than 400°C value, inc
 For best accuracy, always calibrate 250°C if CAL_Zero value was changed, and always calibrate 400°C if 250°C value was changed.<br>
   
   	- **Zero set**<br>
-Calibrates the zero offset of the amplifier. You must have inserted a completely cold tip, or the calibration result will be wrong.<br>
+Calibrates the offset of the amplifier. You must have inserted a completely cold tip, or the calibration result will be wrong.<br>
 This widgets has 3 states than change when clicking on it:<br>
 		- Zero set: Shows the current value in the system (No changes).<br>
 		- Sampling: Shows the ADC value in real time.<br>
@@ -342,6 +398,35 @@ Return to calibration menu saving changes.<br>
 Return to calibration menu discarding changes.<br>
   - **BACK**<br>
 Return to system menu.<br>
+
+---
+
+### ADDONS/EXTRAS (if any addon is enabled during build)
+This menu will provide the list of settings related to the addons/extras. Each of these has to be enabled in the board configuration. These settings applies to all profiles.
+
+#### Fume extractor control
+This addon provides automatic switch on/off for a connected fume extractor. To enable this addon define the *ENABLE_ADDON_FUME_EXTRACTOR* macro in the *board.h* file and in the MCU configuration create a digital output pin named "EXTRACTOR". A high level will be present if the extractor needs to operate.
+  - **Mode**<br>
+    - *OFF*  - The extractor is never switched on. <br>
+    - *AUTO* - Enable the extractor if the iron is not in *sleep* or *standby*.<br>
+    - *ON*   - The extractor is always switched on when the station is powered.<br>
+  - **After Run** (only in *AUTO* mode)<br>
+Keep the extractor on after leaving the *run* mode (entering *standby*) for the given amount of time.<br>
+  - **BACK**<br>
+Return to the addons screen.<br>
+
+#### Switch off reminder
+This addon provides a reminder to switch off the station (remove power) if its left in the *sleep* state for longer than the set amount of time. To enable this addon define the *ENABLE_ADDON_SWITCH_OFF_REMINDER* macro in the *board.h* file.
+  - **Reminder**<br>
+Enable/disable the reminder.<br>
+  - **Delay**<br>
+Start beeping if the station is in sleep mode longer than this amount of time.<br>
+  - **Period**<br>
+Repeat the reminder after this amount of minutes.<br>
+  - **Beep len.**<br>
+Length of the beep.<br>
+  - **BACK**<br>
+Return to the addons screen.<br>
 
 ---
 

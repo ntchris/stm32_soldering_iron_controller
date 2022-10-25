@@ -11,14 +11,48 @@
 
 screen_t Screen_iron;
 screen_t Screen_advFilter;
-comboBox_item_t *comboItem_advFilter;
+static comboBox_item_t *comboItem_advFilter;
+static comboBox_item_t *comboitem_ShakeFiltering;
+static comboBox_item_t *comboitem_StandMode;
 static editable_widget_t *editable_IRON_StandbyTemp;
 static editable_widget_t *editable_IRON_BoostTemp;
 static editable_widget_t *editable_IRON_MaxTemp;
 static editable_widget_t *editable_IRON_MinTemp;
 static editable_widget_t *editable_IRON_UserTemp;
+#ifdef USE_NTC
+static comboBox_item_t *comboitem_PullRes;
+static comboBox_item_t *comboitem_PullMode;
+static comboBox_item_t *comboitem_AutoDetect;
+static comboBox_item_t *comboitem_NTC_res;
+static comboBox_item_t *comboitem_NTC_res_beta;
+static comboBox_item_t *comboitem_Detect_high_res;
+static comboBox_item_t *comboitem_Detect_low_res;
+static comboBox_item_t *comboitem_Detect_high_res_beta;
+static comboBox_item_t *comboitem_Detect_low_res_beta;
+#endif
 
 filter_t bak_f;
+
+void updateTempValues();
+
+#ifdef USE_NTC
+ntc_data_t backup_ntc;
+
+void update_NTC_menu(void){
+  uint8_t NTC_auto = (backup_ntc.detection && backup_ntc.enabled);
+  uint8_t NTC_fixed = (!backup_ntc.detection && backup_ntc.enabled);
+  comboitem_PullMode->enabled = backup_ntc.enabled;
+  comboitem_PullRes->enabled =  backup_ntc.enabled;
+  comboitem_AutoDetect->enabled =  backup_ntc.enabled;
+  comboitem_NTC_res->enabled = NTC_fixed;
+  comboitem_NTC_res_beta->enabled = NTC_fixed;
+  comboitem_Detect_high_res->enabled = NTC_auto;
+  comboitem_Detect_low_res->enabled = NTC_auto;
+  comboitem_Detect_high_res_beta->enabled = NTC_auto;
+  comboitem_Detect_low_res_beta->enabled = NTC_auto;
+}
+#endif
+
 
 
 //=========================================================
@@ -82,6 +116,12 @@ static void * get_reset_threshold() {
   return &temp;
 }
 //=========================================================
+void update_Iron_menu(void){
+  bool mode = (systemSettings.Profile.WakeInputMode==mode_shake);
+  comboitem_StandMode->enabled       = !mode;
+  comboitem_ShakeFiltering->enabled  = mode;
+}
+//=========================================================
 #ifdef USE_VIN
 static void * getMaxPower() {
   temp = systemSettings.Profile.power;
@@ -124,17 +164,17 @@ static void * getStandbyTemp() {
   return &temp;
 }
 //=========================================================
-static void setUserTemp(uint32_t *val) {
+static void setDefaultTemp(uint32_t *val) {
   if(*val > systemSettings.Profile.MaxSetTemperature){
     *val = systemSettings.Profile.MaxSetTemperature;
   }
   else if(*val < systemSettings.Profile.MinSetTemperature){
     *val = systemSettings.Profile.MinSetTemperature;
   }
-  systemSettings.Profile.UserSetTemperature = *val;
+  systemSettings.Profile.defaultTemperature = *val;
 }
-static void * getUserTemp() {
-  temp = systemSettings.Profile.UserSetTemperature;
+static void * getDefaultTemp() {
+  temp = systemSettings.Profile.defaultTemperature;
   return &temp;
 }
 //=========================================================
@@ -173,33 +213,20 @@ static void _setReadPeriod(uint32_t *val) {
 //=========================================================
 static void * getMaxTemp() {
   temp=systemSettings.Profile.MaxSetTemperature;
-  editable_IRON_MinTemp->max_value = temp-1;
-  editable_IRON_MaxTemp->min_value = systemSettings.Profile.MinSetTemperature+1;
-  if(systemSettings.Profile.standbyTemperature>temp){
-    systemSettings.Profile.standbyTemperature = temp;
-  }
-  if(systemSettings.Profile.UserSetTemperature>temp){
-    systemSettings.Profile.UserSetTemperature = temp;
-    Iron.CurrentSetTemperature=temp;
-  }
   return &temp;
 }
 static void setMaxTemp(uint32_t *val) {
   systemSettings.Profile.MaxSetTemperature=*val;
+  updateTempValues();
 }
 //=========================================================
 static void * getMinTemp() {
   temp=systemSettings.Profile.MinSetTemperature;
-  editable_IRON_MaxTemp->min_value = temp+1;
-  editable_IRON_MinTemp->max_value = systemSettings.Profile.MaxSetTemperature-1;
-  if(systemSettings.Profile.UserSetTemperature<temp){
-    systemSettings.Profile.UserSetTemperature = temp;
-    Iron.CurrentSetTemperature=temp;
-  }
   return &temp;
 }
 static void setMinTemp(uint32_t *val) {
   systemSettings.Profile.MinSetTemperature=*val;
+  updateTempValues();
 }
 //=========================================================
 static void * geterrorDelay() {
@@ -242,9 +269,35 @@ static void * getBoostTemp() {
   return &temp;
 }
 //=========================================================
+static void * getWakeMode() {
+  temp = systemSettings.Profile.WakeInputMode;
+  update_Iron_menu();
+  return &temp;
+}
+static void setWakeMode(uint32_t *val) {
+  systemSettings.Profile.WakeInputMode = *val;
+}
+//=========================================================
+static void * getStandMode() {
+  temp = systemSettings.Profile.StandMode;
+  return &temp;
+}
+static void setStandMode(uint32_t *val) {
+  systemSettings.Profile.StandMode = *val;
+}
+//=========================================================
+static void * getShakeFiltering() {
+  temp = systemSettings.Profile.shakeFiltering;
+  return &temp;
+}
+static void setShakeFiltering(uint32_t *val) {
+  systemSettings.Profile.shakeFiltering = *val;
+}
+//=========================================================
 
 static void iron_onEnter(screen_t *scr){
-  if(systemSettings.settings.tempUnit==mode_Farenheit){
+  update_Iron_menu();
+  if(getSystemTempUnit()==mode_Farenheit){
     editable_IRON_MaxTemp->inputData.endString="\260F";
     editable_IRON_MinTemp->inputData.endString="\260F";
     editable_IRON_StandbyTemp->inputData.endString="\260F";
@@ -259,7 +312,19 @@ static void iron_onEnter(screen_t *scr){
     editable_IRON_UserTemp->inputData.endString="\260C";
   }
   if(scr==&Screen_settings){
-    comboResetIndex(Screen_iron.widgets);
+    comboResetIndex(Screen_iron.current_widget);
+  }
+}
+
+static void iron_onExit(screen_t *scr){
+  uint16_t const userTemp = getUserTemperature();
+  if(userTemp > systemSettings.Profile.MaxSetTemperature)
+  {
+    setUserTemperature(systemSettings.Profile.MaxSetTemperature);
+  }
+  else if (userTemp < systemSettings.Profile.MinSetTemperature)
+  {
+    setUserTemperature(systemSettings.Profile.MinSetTemperature);
   }
 }
 
@@ -268,13 +333,258 @@ int filter_Save(widget_t *w, RE_Rotation_t input){
   systemSettings.Profile.tipFilter = bak_f;
   TIP.filter=bak_f;
   __enable_irq();
-  return screen_iron;
+  return last_scr;
 }
+
+
+#ifdef USE_NTC
+
+static void set_enable_NTC(uint32_t *val) {
+  backup_ntc.enabled = *val;
+  update_NTC_menu();
+}
+static void * get_enable_NTC() {
+  temp = backup_ntc.enabled;
+  return &temp;
+}
+//=========================================================
+static void set_NTC_beta(uint32_t *val) {
+  backup_ntc.NTC_beta = *val;
+}
+static void * get_NTC_beta() {
+  temp = backup_ntc.NTC_beta;
+  return &temp;
+}
+//=========================================================
+static void set_NTC_res(uint32_t *val) {
+  backup_ntc.NTC_res = *val;
+}
+static void * get_NTC_res() {
+  temp = backup_ntc.NTC_res;
+  return &temp;
+}
+//=========================================================
+static void set_Pull_res(uint32_t *val) {
+  backup_ntc.pull_res = *val;
+}
+static void * get_Pull_res() {
+  temp = backup_ntc.pull_res;
+  return &temp;
+}
+//=========================================================
+static void set_Pull_mode(uint32_t *val) {
+  backup_ntc.pullup = *val;
+}
+static void * get_Pull_mode() {
+  temp = backup_ntc.pullup;
+  return &temp;
+}
+//=========================================================
+static void set_NTC_detect(uint32_t *val) {
+  backup_ntc.detection = *val;
+  update_NTC_menu();
+}
+static void * get_NTC_detect() {
+  temp = backup_ntc.detection;
+  return &temp;
+}
+//=========================================================
+static void set_NTC_detect_high_res(uint32_t *val) {
+  backup_ntc.high_NTC_res = *val;
+}
+static void * get_NTC_detect_high_res() {
+  temp = backup_ntc.high_NTC_res;
+  return &temp;
+}
+//=========================================================
+static void set_NTC_detect_low_res(uint32_t *val) {
+  backup_ntc.low_NTC_res = *val;
+}
+static void * get_NTC_detect_low_res() {
+  temp = backup_ntc.low_NTC_res;
+  return &temp;
+}
+//=========================================================
+static void set_NTC_detect_high_res_beta(uint32_t *val) {
+  backup_ntc.high_NTC_beta = *val;
+}
+static void * get_NTC_detect_high_res_beta() {
+  temp = backup_ntc.high_NTC_beta;
+  return &temp;
+}
+//=========================================================
+static void set_NTC_detect_low_res_beta(uint32_t *val) {
+  backup_ntc.low_NTC_beta = *val;
+}
+static void * get_NTC_detect_low_res_beta() {
+  temp = backup_ntc.low_NTC_beta;
+  return &temp;
+}
+//=========================================================
+static int saveNTC(widget_t *w, RE_Rotation_t input) {
+  __disable_irq();
+  systemSettings.Profile.ntc = backup_ntc;
+  detectNTC();
+
+  __enable_irq();
+  return last_scr;
+}
+//=========================================================
+
+static void system_ntc_onEnter(screen_t *scr){
+  comboResetIndex(Screen_system_ntc.current_widget);
+  backup_ntc = systemSettings.Profile.ntc;
+  update_NTC_menu();
+}
+
+static void system_ntc_create(screen_t *scr){
+  widget_t* w;
+  displayOnly_widget_t* dis;
+  editable_widget_t* edit;
+
+  //  [ SYSTEM COMBO ]
+  //
+  newWidget(&w,widget_combo,scr);
+
+  //  [ NTC enabled Widget ]
+  //
+  newComboMultiOption(w, strings[lang].NTC_Enable_NTC,&edit, NULL);
+  dis=&edit->inputData;
+  dis->reservedChars=3;
+  dis->getData = &get_enable_NTC;
+  edit->big_step = 1;
+  edit->step = 1;
+  edit->setData = (void (*)(void *))&set_enable_NTC;
+  edit->options = strings[lang].OffOn;
+  edit->numberOfOptions = 2;
+
+  //  [ Pullup mode Widget ]
+  //
+  newComboMultiOption(w, strings[lang].NTC_Pull,&edit, &comboitem_PullMode);
+  dis=&edit->inputData;
+  dis->reservedChars=4;
+  dis->getData = &get_Pull_mode;
+  edit->big_step = 1;
+  edit->step = 1;
+  edit->setData = (void (*)(void *))&set_Pull_mode;
+  edit->options = strings[lang].DownUp;
+  edit->numberOfOptions = 2;
+
+  //  [ Pull res Widget ]
+  //
+  newComboEditable(w, strings[lang].NTC__Res, &edit, &comboitem_PullRes);
+  dis=&edit->inputData;
+  dis->number_of_dec=1;
+  dis->reservedChars=7;
+  dis->endString="KΩ";
+  dis->getData = &get_Pull_res;
+  edit->big_step = 10;
+  edit->step = 1;
+  edit->setData = (void (*)(void *))&set_Pull_res;
+  edit->max_value = 5000;
+  edit->min_value = 1;
+
+  //  [ Auto detect Widget ]
+  //
+  newComboMultiOption(w, strings[lang].NTC_NTC_Detect,&edit, &comboitem_AutoDetect);
+  dis=&edit->inputData;
+  dis->reservedChars=3;
+  dis->getData = &get_NTC_detect;
+  edit->big_step = 1;
+  edit->step = 1;
+  edit->setData = (void (*)(void *))&set_NTC_detect;
+  edit->options = strings[lang].OffOn;
+  edit->numberOfOptions = 2;
+
+  //  [ NTC auto higher Widget ]
+  //
+  newComboEditable(w, strings[lang].NTC__High, &edit, &comboitem_Detect_high_res);
+  dis=&edit->inputData;
+  dis->number_of_dec=1;
+  dis->reservedChars=7;
+  dis->endString="KΩ";
+  dis->getData = &get_NTC_detect_high_res;
+  edit->big_step = 10;
+  edit->step = 1;
+  edit->setData = (void (*)(void *))&set_NTC_detect_high_res;
+  edit->max_value = 5000;
+  edit->min_value = 1;
+
+  //  [ NTC auto higher beta Widget ]
+  //
+  newComboEditable(w, strings[lang].NTC__Beta, &edit, &comboitem_Detect_high_res_beta);
+  dis=&edit->inputData;
+  dis->reservedChars=5;
+  dis->getData = &get_NTC_detect_high_res_beta;
+  edit->big_step = 100;
+  edit->step = 10;
+  edit->setData = (void (*)(void *))&set_NTC_detect_high_res_beta;
+  edit->max_value = 50000;
+  edit->min_value = 500;
+
+  //  [ NTC auto lower Widget ]
+  //
+  newComboEditable(w, strings[lang].NTC__Low, &edit, &comboitem_Detect_low_res);
+  dis=&edit->inputData;
+  dis->number_of_dec=1;
+  dis->reservedChars=7;
+  dis->endString="KΩ";
+  dis->getData = &get_NTC_detect_low_res;
+  edit->big_step = 10;
+  edit->step = 1;
+  edit->setData = (void (*)(void *))&set_NTC_detect_low_res;
+  edit->max_value = 5000;
+  edit->min_value = 1;
+
+  //  [ NTC auto lower beta Widget ]
+  //
+  newComboEditable(w, strings[lang].NTC__Beta, &edit, &comboitem_Detect_low_res_beta);
+  dis=&edit->inputData;
+  dis->reservedChars=5;
+  dis->getData = &get_NTC_detect_low_res_beta;
+  edit->big_step = 100;
+  edit->step = 10;
+  edit->setData = (void (*)(void *))&set_NTC_detect_low_res_beta;
+  edit->max_value = 50000;
+  edit->min_value = 500;
+
+  //  [ NTC res Widget ]
+  //
+  newComboEditable(w, strings[lang].NTC__Res, &edit, &comboitem_NTC_res);
+  dis=&edit->inputData;
+  dis->number_of_dec=1;
+  dis->reservedChars=7;
+  dis->endString="KΩ";
+  dis->getData = &get_NTC_res;
+  edit->big_step = 10;
+  edit->step = 1;
+  edit->setData = (void (*)(void *))&set_NTC_res;
+  edit->max_value = 5000;
+  edit->min_value = 1;
+
+  //  [ NTC Beta Widget ]
+  //
+  newComboEditable(w, strings[lang].NTC__Beta, &edit, &comboitem_NTC_res_beta);
+  dis=&edit->inputData;
+  dis->reservedChars=5;
+  dis->getData = &get_NTC_beta;
+  edit->big_step = 100;
+  edit->step = 10;
+  edit->setData = (void (*)(void *))&set_NTC_beta;
+  edit->max_value = 50000;
+  edit->min_value = 500;
+
+  newComboAction(w, strings[lang]._SAVE, &saveNTC, NULL);
+  newComboScreen(w, strings[lang]._BACK, last_scr , NULL);
+}
+
+#endif
 
 static void iron_create(screen_t *scr){
   widget_t* w;
   displayOnly_widget_t* dis;
   editable_widget_t* edit;
+  uint16_t maxTemp = (getSystemTempUnit()==mode_Celsius ? 480 : 900);
 
   //  [ IRON COMBO ]
   //
@@ -289,7 +599,7 @@ static void iron_create(screen_t *scr){
   dis->getData = &getMaxTemp;
   edit->big_step = 10;
   edit->step = 5;
-  edit->max_value = 480;
+  edit->max_value = maxTemp;
   edit->setData = (void (*)(void *))&setMaxTemp;
 
   //  [ Min Temp Widget ]
@@ -301,20 +611,20 @@ static void iron_create(screen_t *scr){
   dis->getData = &getMinTemp;
   edit->big_step = 10;
   edit->step = 5;
-  edit->max_value = 480;
+  edit->max_value = maxTemp;
   edit->min_value = 50;
   edit->setData = (void (*)(void *))&setMinTemp;
 
   //  [ user Temp Widget ]
   //
-  newComboEditable(w, strings[lang].IRON_User_Temp, &edit, NULL);
+  newComboEditable(w, strings[lang].IRON_Default_Temp, &edit, NULL);
   editable_IRON_UserTemp=edit;
   dis=&edit->inputData;
   dis->reservedChars=5;
-  dis->getData = &getUserTemp;
+  dis->getData = &getDefaultTemp;
   edit->big_step = 10;
   edit->step = 5;
-  edit->setData = (void (*)(void *))&setUserTemp;
+  edit->setData = (void (*)(void *))&setDefaultTemp;
 
   //  [ Stby Time Widget ]
   //
@@ -380,6 +690,38 @@ static void iron_create(screen_t *scr){
   edit->min_value = 10;
   edit->setData = (void (*)(void *))&setBoostTemp;
 
+  //  [ Wake mode Widget ]
+  //
+  newComboMultiOption(w, strings[lang].IRON_Wake_Mode, &edit, NULL);
+  dis=&edit->inputData;
+  dis->getData = &getWakeMode;
+  edit->big_step = 1;
+  edit->step = 1;
+  edit->setData = (void (*)(void *))&setWakeMode;
+  edit->options = strings[lang].wakeMode;
+  edit->numberOfOptions = 2;
+
+  //  [ Shake filtering Widget ]
+  //
+  newComboMultiOption(w, strings[lang].IRON_Shake_Filtering, &edit, &comboitem_ShakeFiltering);
+  dis=&edit->inputData;
+  dis->getData = &getShakeFiltering;
+  edit->big_step = 1;
+  edit->step = 1;
+  edit->setData = (void (*)(void *))&setShakeFiltering;
+  edit->options = strings[lang].OffOn;
+  edit->numberOfOptions = 2;
+
+  //  [ Stand mode Widget ]
+  //
+  newComboMultiOption(w, strings[lang].IRON_Stand_Mode, &edit, &comboitem_StandMode);
+  dis=&edit->inputData;
+  dis->getData = &getStandMode;
+  edit->big_step = 1;
+  edit->step = 1;
+  edit->setData = (void (*)(void *))&setStandMode;
+  edit->options = strings[lang].InitMode;
+  edit->numberOfOptions = 2;
   #ifdef USE_VIN
   //  [ Power Widget ]
   //
@@ -460,7 +802,7 @@ static void iron_create(screen_t *scr){
   edit->big_step = 50;
   edit->step = 10;
   edit->setData = (void (*)(void *))&setNoIronADC;
-  edit->max_value = 4096;
+  edit->max_value = 4100;
   edit->min_value = 200;
 
   //  [ Error Delay Widget ]
@@ -485,19 +827,29 @@ static void iron_create(screen_t *scr){
   edit->big_step = 1;
   edit->step = 1;
   edit->setData = (void (*)(void *))&seterrorResume;
-  edit->max_value = error_resume;
-  edit->min_value = error_sleep;
   edit->options = strings[lang].errMode;
   edit->numberOfOptions = 3;
 
+  //  [ Filter screen ]
+  //
+  newComboScreen(w, strings[lang].IRON_FILTER_MENU, screen_advFilter, &comboItem_advFilter);
+
+  #ifdef USE_NTC
+  //  [ NTC screen ]
+  //
+  newComboScreen(w, strings[lang].IRON_NTC_MENU, screen_ntc, NULL);
+  #endif
+
   //  [ BACK button ]
   //
-  newComboScreen(w, strings[lang].IRON_Filter_Settings, screen_advFilter, &comboItem_advFilter);
   newComboScreen(w, strings[lang]._BACK, screen_settings, NULL);
+
+  updateTempValues();
+  update_Iron_menu();
 }
 
 static void iron_advFilter_onEnter(screen_t *scr){
-  comboResetIndex(Screen_advFilter.widgets);
+  comboResetIndex(Screen_advFilter.current_widget);
   bak_f = systemSettings.Profile.tipFilter;
 }
 static void iron_advFilter_create(screen_t *scr){
@@ -585,7 +937,7 @@ static void iron_advFilter_create(screen_t *scr){
   edit->min_value = 10;
 
   newComboAction(w, strings[lang]._SAVE, &filter_Save , NULL);
-  newComboScreen(w, strings[lang]._CANCEL, screen_iron, NULL);
+  newComboScreen(w, strings[lang]._CANCEL, last_scr, NULL);
 }
 
 void iron_screen_setup(screen_t *scr){
@@ -593,6 +945,7 @@ void iron_screen_setup(screen_t *scr){
   scr->onEnter = &iron_onEnter;
   scr->processInput = &autoReturn_ProcessInput;
   scr->create = &iron_create;
+  scr->onExit = &iron_onExit;
 
   sc = &Screen_advFilter;
   oled_addScreen(&Screen_advFilter, screen_advFilter);
@@ -600,5 +953,28 @@ void iron_screen_setup(screen_t *scr){
   sc->processInput = &autoReturn_ProcessInput;
   sc->create = &iron_advFilter_create;
 
+  #ifdef USE_NTC
+  sc=&Screen_system_ntc;
+  oled_addScreen(sc, screen_ntc);
+  sc->onEnter = &system_ntc_onEnter;
+  sc->processInput=&autoReturn_ProcessInput;
+  sc->create = &system_ntc_create;
+  #endif
+
+}
+
+void updateTempValues()
+{
+  editable_IRON_MinTemp->max_value = systemSettings.Profile.MaxSetTemperature - 1;
+  editable_IRON_MaxTemp->min_value = systemSettings.Profile.MinSetTemperature + 1;
+
+  if(systemSettings.Profile.defaultTemperature > systemSettings.Profile.MaxSetTemperature)
+  {
+    systemSettings.Profile.defaultTemperature = systemSettings.Profile.MaxSetTemperature;
+  }
+  else if(systemSettings.Profile.defaultTemperature < systemSettings.Profile.MinSetTemperature)
+  {
+    systemSettings.Profile.defaultTemperature = systemSettings.Profile.MinSetTemperature;
+  }
 }
 

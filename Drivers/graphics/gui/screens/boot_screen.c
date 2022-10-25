@@ -18,7 +18,6 @@ static widget_t *Widget_profile;
 static widget_t *Widget_lang;
 static widget_t *Widget_ok;
 static uint8_t boot_step=0;
-static uint8_t current_lang = lang_english;
 
 // Credits: Jesus Vallejo  https://github.com/jesusvallejo/
 const uint8_t splashXBM[] = {
@@ -117,7 +116,7 @@ static void * getProfile() {
   temp = profile;
   return &temp;
 }
-static void setProfile(int32_t *val) {
+static void setProfile(uint32_t *val) {
   profile=*val;
 }
 //=========================================================
@@ -125,7 +124,6 @@ static void * getLanguage() {
   temp = systemSettings.settings.language;
   return &temp;
 }
-
 static void setLanguage(uint32_t *val) {
   lang = *val;
   systemSettings.settings.language=*val;
@@ -143,7 +141,7 @@ void draw_boot_strings(void){
   u8g2_SetFont(&u8g2, u8g2_font_menu );
   u8g2_SetDrawColor(&u8g2, WHITE);
   putStrAligned(strings[lang].boot_firstBoot, 0, align_center);
-  u8g2_DrawHLine(&u8g2, 0, 13, OledWidth);
+  u8g2_DrawHLine(&u8g2, 0, 13, displayWidth);
   u8g2_DrawUTF8(&u8g2, 0, 18, strings[lang].boot_Profile);
   u8g2_DrawUTF8(&u8g2, 0, 34, strings[lang]._Language);
 }
@@ -174,7 +172,7 @@ int boot_screen_processInput(screen_t * scr, RE_Rotation_t input, RE_State_t *st
   }
 
   if(input!=Rotate_Nothing){
-    refreshOledDim();
+    wakeOledDim();
   }
   handleOledDim();
 
@@ -185,20 +183,11 @@ int boot_screen_processInput(screen_t * scr, RE_Rotation_t input, RE_State_t *st
       setSafeMode(disable);                                                                           // Disable safe mode and exit
 
     case 0:
-      if(current_time - screen_timer > SPLASH_TIMEOUT){                                               // After splash timeout
+      if(checkScreenTimer(SPLASH_TIMEOUT)){                                                           // After splash timeout
         if(!systemSettings.setupMode){                                                                // If not in setup mode
-          __disable_irq();
-          TIP.EMA_of_Input =  TIP.last_avg = TIP.last_raw;                                            // Now override filter values with last raw reading
-          #ifdef USE_NTC
-          NTC.EMA_of_Input = NTC.last_avg = NTC.last_raw;
-          #endif
-          #ifdef USE_VIN
-          VIN.EMA_of_Input = VIN.last_avg = VIN.last_raw;
-          #endif
-          readColdJunctionSensorTemp_x10(new_reading, systemSettings.settings.tempUnit);              // Refresh the temperatures to show current temperature from the beginning
-          readTipTemperatureCompensated(new_reading, read_average, systemSettings.settings.tempUnit);
-          resetIronError();                                                                           // Force resetting the timeout of any error (This won't clear errors if still detected)
-          __enable_irq();
+          ADC_Reset_measures();                                                                       // Reset the averages, show current values to avoid filtering delay at startup
+          resetIronError();                                                                           // Force timeout of any error (This won't clear errors if still detected)
+          setBootCompleteFlag();
           return screen_main;                                                                         // Go to main screen
         }
         widgetEnable(Widget_lang);                                                                    // In setup mode, enable widgets
@@ -221,8 +210,8 @@ int boot_screen_processInput(screen_t * scr, RE_Rotation_t input, RE_State_t *st
 
 void boot_screen_init(screen_t * scr){
   default_init(scr);
-  profile=systemSettings.settings.currentProfile;
-  if( (systemSettings.settings.NotInitialized!=initialized) || (profile>profile_C210) ){
+  profile=systemSettings.currentProfile;
+  if( (systemSettings.settings.state!=initialized) || (profile>profile_C210) ){
     profile=profile_T12;
     setSafeMode(enable);
     systemSettings.setupMode=enable;
@@ -230,8 +219,10 @@ void boot_screen_init(screen_t * scr){
   u8g2_SetDrawColor(&u8g2,WHITE);
   u8g2_DrawXBMP(&u8g2, 0, 0, splashXBM[0], splashXBM[1], &splashXBM[2]);
   scr->refresh = screen_Erased;
-  setContrast(0);
-  refreshOledDim();
+#ifndef ST7565
+  setDisplayContrastOrBrightness(0);
+  wakeOledDim();
+#endif
 }
 
 
@@ -240,7 +231,7 @@ void boot_screen_create(screen_t *scr){
   displayOnly_widget_t *dis;
   editable_widget_t *edit;
   lang = systemSettings.settings.language;
-  if(lang>LANGUAGE_COUNT-1){
+  if(lang>=LANGUAGE_COUNT){
     lang=lang_english;
   }
   current_lang = lang;
@@ -258,9 +249,8 @@ void boot_screen_create(screen_t *scr){
   edit->step = 1;
   edit->selectable.tab = 0;
   edit->setData = (void (*)(void *))&setProfile;
-  edit->max_value = ProfileSize-1;
   edit->options = profileStr;
-  edit->numberOfOptions = ProfileSize;
+  edit->numberOfOptions = NUM_PROFILES;
   w->posX = 74;
   w->posY = 16;
   w->width = 44;
@@ -279,7 +269,6 @@ void boot_screen_create(screen_t *scr){
   edit->step = 1;
   edit->selectable.tab = 1;
   edit->setData = (void (*)(void *))&setLanguage;
-  edit->max_value = LANGUAGE_COUNT-1;
   edit->options = Langs;
   edit->numberOfOptions = LANGUAGE_COUNT;
   w->posX = 74;
@@ -298,7 +287,7 @@ void boot_screen_create(screen_t *scr){
   button->action = &SaveSetup;
   w->posY = 48;
   w->width = 60;
-  w->posX = (OledWidth-1) - w->width;
+  w->posX = (displayWidth-1) - w->width;
   w->enabled=0;
 }
 

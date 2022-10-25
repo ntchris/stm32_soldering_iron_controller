@@ -10,7 +10,7 @@
 #include "main.h"
 #include "board.h"
 #include "iron.h"
-#include "ssd1306.h"
+#include "display.h"
 #include "gui.h"
 
 #ifdef RUN_MY_TEST
@@ -37,8 +37,8 @@ void myTest(void){
   //#endif
 
   char str[16];
-  setContrast(255);
-  FillBuffer(BLACK, fill_dma);
+  setBrightness(255);
+  fillBuffer(BLACK, fill_dma);
   u8g2_SetFont(&u8g2,default_font );
   u8g2_SetDrawColor(&u8g2, WHITE);
   if(oled.use_sw){

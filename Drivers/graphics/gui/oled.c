@@ -13,13 +13,14 @@ static screen_t *screens = NULL;
 screen_t *current_screen;
 uint32_t current_time;
 uint32_t screen_timer;
+uint8_t last_scr;
 static RE_State_t* RE_State;
 
 RE_Rotation_t (*RE_GetData)(RE_State_t*);
 RE_Rotation_t RE_Rotation;
 
 
-void oled_addScreen(screen_t *screen, uint8_t index){
+void oled_addScreen(screen_t *screen, screens_t index){
   screen->processInput = &default_screenProcessInput;
   screen->init = &default_init;
   screen->draw = &default_screenDraw;
@@ -45,6 +46,8 @@ void oled_addScreen(screen_t *screen, uint8_t index){
 void oled_draw() {
 
   if(oled.status!=oled_idle) { return; }                // If Oled busy, skip update
+
+  current_time = HAL_GetTick();
   if(current_screen->draw(current_screen)){
     update_display();                                   // Only update if something was drawn
   }
@@ -55,11 +58,11 @@ void oled_update() {
     current_time = HAL_GetTick();
     current_screen->update(current_screen);
   }
-  current_time = HAL_GetTick();
   oled_draw();
 }
 
 void oled_init(RE_Rotation_t (*GetData)(RE_State_t*), RE_State_t *State) {
+  screen_timer = current_time = HAL_GetTick();
   RE_State = State;
   RE_GetData = GetData;
   screen_t *scr = screens;
@@ -108,41 +111,23 @@ void oled_destroy_screen(screen_t *scr){
 }
 
 void oled_backup_comboStatus(screen_t *scr){
-  if((scr->widgets)&&(scr->widgets->type==widget_combo)){
-    comboBox_widget_t *combo = (comboBox_widget_t*)scr->widgets->content;
-    comboBox_item_t *item=combo->first;
-    uint8_t t=0;
-
-    while(item){
-      if(item==combo->currentItem){
-        break;
-      }
-      item=item->next_item;
-      t++;
-    }
-    if(!item){
-      scr->backup_combo_index=0;
-      scr->backup_combo_scroll=0;
+  if((scr->current_widget)&&(scr->current_widget->type==widget_combo)){
+    comboBox_widget_t *combo = (comboBox_widget_t*)scr->current_widget->content;
+    if(combo->currentItem){
+      scr->backup_combo_index = comboItemToIndex(scr->current_widget,combo->currentItem);
+      scr->backup_combo_scroll=combo->currentScroll;
     }
     else{
-      scr->backup_combo_scroll=combo->currentScroll;
-      scr->backup_combo_index=t;
+      scr->backup_combo_index=0;
+      scr->backup_combo_scroll=0;
     }
   }
 }
 void oled_restore_comboStatus(screen_t *scr){
-  if((scr->widgets)&&(scr->widgets->type==widget_combo)){
-    comboBox_widget_t *combo = (comboBox_widget_t*)scr->widgets->content;
-    comboBox_item_t *item=combo->first;
-    uint8_t t = scr->backup_combo_index;
-    while(t--){
-      if(!item->next_item){
-        return;
-      }
-      item=item->next_item;
-    }
+  if((scr->current_widget)&&(scr->current_widget->type==widget_combo)){
+    comboBox_widget_t *combo = (comboBox_widget_t*)scr->current_widget->content;
     combo->currentScroll=scr->backup_combo_scroll;
-    combo->currentItem=item;
+    combo->currentItem = comboIndexToItem(scr->current_widget,scr->backup_combo_index);
   }
 }
 void oled_processInput(void) {
@@ -151,10 +136,11 @@ void oled_processInput(void) {
   int ret = current_screen->processInput(current_screen, RE_Rotation, RE_State);
   if(ret > 0) {   // -1 do nothing, -2 nothing processed
     screen_t *scr = screens;
-    FillBuffer(BLACK, fill_dma);
+    fillBuffer(BLACK, fill_dma);
     current_time = HAL_GetTick();
     while(scr) {
       if(scr->index == ret) {
+        last_scr = current_screen->index;
 
         if(current_screen->onExit){
           current_screen->onExit(scr);

@@ -8,15 +8,16 @@
 #include "calibration_screen.h"
 #include "screen_common.h"
 
-enum { zero_disabled, zero_sampling, zero_capture };
+#define CAL_TIMEOUT 300000                                          // Inactivity timeout in milliseconds
+
+typedef enum { zero_disabled, zero_sampling, zero_capture }zero_state_t;
 const  int16_t state_temps[2] = { 2500, 4000 };                     // Temp *10 for better accuracy
 static uint8_t error;
-static uint32_t errorTimer;
 static bool backupTempUnit;
 static char* state_tempstr[2] = { "250\260C", "400\260C" };
 static uint16_t measured_temps[2];
 static uint16_t adcAtTemp[2];
-static uint16_t adcCal[2];
+static int16_t adcCal[2];
 static uint16_t calAdjust[3];
 static uint16_t backup_calADC_At_0;
 static state_t current_state;
@@ -25,7 +26,8 @@ static int32_t measuredTemp;
 static uint8_t processCalibration(void);
 static void setCalState(state_t s);
 static tipData_t *Currtip;
-static uint8_t update, update_draw, zero_state;
+static uint8_t update, update_draw;
+static zero_state_t zero_state;
 screen_t Screen_calibration;
 screen_t Screen_calibration_start;
 screen_t Screen_calibration_settings;
@@ -37,7 +39,14 @@ static comboBox_item_t *Cal_Combo_Adjust_zero;
 static comboBox_item_t *Cal_Combo_Adjust_C250;
 static comboBox_item_t *Cal_Combo_Adjust_C400;
 
-
+static void restore_tip(void){
+  __disable_irq();
+   *Currtip = backupTip;
+   __enable_irq();
+}
+static void backup_tip(void){
+  backupTip = *Currtip ;
+}
 //=========================================================
 static uint8_t processCalibration(void) {
 
@@ -46,10 +55,8 @@ static uint8_t processCalibration(void) {
     return 1;
   }
   adcCal[cal_250] = map(state_temps[cal_250], 0, measured_temps[cal_250], systemSettings.Profile.calADC_At_0, adcAtTemp[cal_250]);
-  //adcCal[cal_250] = map(state_temps[cal_250], measured_temps[cal_250], measured_temps[cal_400], adcAtTemp[cal_250], adcAtTemp[cal_400]);
   adcCal[cal_400] = map(state_temps[cal_400], measured_temps[cal_250], measured_temps[cal_400], adcAtTemp[cal_250], adcAtTemp[cal_400]);
-
-  if(adcCal[cal_250]>4090 || adcCal[cal_400]>4090 || adcCal[cal_400]<adcCal[cal_250]){    // Check that values are valid and don't exceed ADC range
+  if(adcCal[cal_250]>4090 || adcCal[cal_250]<0 || adcCal[cal_400]>4090 || adcCal[cal_400]<0 || adcCal[cal_400]<adcCal[cal_250]){    // Check that values are valid and don't exceed ADC range
     return 1;
   }
   return 0;
@@ -75,7 +82,7 @@ static void *getCal250() {
 static void setCal250(int32_t *val) {
   int16_t temp=*val;
   if(temp>=calAdjust[cal_400]){
-    temp=calAdjust[cal_400]-1;
+    temp=calAdjust[cal_400]-10;
   }
   calAdjust[cal_250] = temp;
 
@@ -102,7 +109,7 @@ static void *getCal400() {
 static void setCal400(int32_t *val) {
   uint16_t temp=*val;
   if(temp<=calAdjust[cal_250]){
-    temp=calAdjust[cal_250]+1;
+    temp=calAdjust[cal_250]+10;
   }
   calAdjust[cal_400] = temp;
   __disable_irq();
@@ -134,11 +141,11 @@ static int Cal_Settings_SaveAction(widget_t *w, RE_Rotation_t input) {
 
     saveSettingsFromMenu(save_Settings);
   }
-  return screen_calibration;
+  return last_scr;
 }
 
 static int cancelAction(widget_t* w) {
-  return screen_calibration;
+  return last_scr;
 }
 
 static int zero_setAction(widget_t* w, RE_Rotation_t input) {
@@ -205,7 +212,7 @@ static void Cal_onEnter(screen_t *scr) {
     backupMode=getCurrentMode();
     backupTemp=getUserTemperature();
     Currtip = getCurrentTip();
-    comboResetIndex(Screen_calibration.widgets);
+    comboResetIndex(Screen_calibration.current_widget);
     error=0;
     setCalibrationMode(enable);
   }
@@ -223,9 +230,8 @@ static void Cal_onExit(screen_t *scr) {
 static uint8_t Cal_draw(screen_t *scr){
   if(error==1){
     error=2;
-    Screen_calibration.widgets->enabled=0;
-    errorTimer=current_time;
-    FillBuffer(BLACK,fill_dma);
+    Screen_calibration.current_widget->enabled=0;
+    fillBuffer(BLACK,fill_dma);
     scr->refresh=screen_Erased;
     putStrAligned(strings[lang].CAL_Error, 10, align_center);
     putStrAligned(strings[lang].CAL_Aborting, 25, align_center);
@@ -235,24 +241,20 @@ static uint8_t Cal_draw(screen_t *scr){
 
 static int Cal_ProcessInput(struct screen_t *scr, RE_Rotation_t input, RE_State_t *s) {
   updatePlot();
-  refreshOledDim();
+  wakeOledDim();
   handleOledDim();
+  updateScreenTimer(input);
 
   if(error){
-    if(error==2){
-      error++;
-    }
-    else if(error==3 && (current_time-errorTimer)>2000 ){
+    if(checkScreenTimer(2000)){
+      resetScreenTimer();                       // Reset screen idle timer
       error=0;
-      widgetEnable(Screen_calibration.widgets);
+      widgetEnable(Screen_calibration.current_widget);
       scr->refresh=screen_Erase;
     }
   }
   else{
-    if(input!=Rotate_Nothing){
-      screen_timer=current_time;
-    }
-    if(input==LongClick || ((current_time-screen_timer)>15000)){
+    if(input==LongClick || checkScreenTimer(15000)){
       return screen_main;
     }
     else if(input==Rotate_Decrement_while_click){
@@ -266,21 +268,19 @@ static void Cal_create(screen_t *scr) {
   widget_t* w;
 
   newWidget(&w,widget_combo,scr);
+  w->posY=10;
 
   newComboScreen(w, strings[lang]._START, screen_calibration_start, NULL);
   newComboScreen(w, strings[lang]._SETTINGS, screen_calibration_settings, NULL);
   newComboScreen(w, strings[lang]._BACK, screen_settings, NULL);
-  w->posY=10;
 }
 
 
 static void Cal_Start_init(screen_t *scr) {
   default_init(scr);
-  updateAmbientTemp();
-  tempReady = 0;
-  backupTempUnit=systemSettings.settings.tempUnit;
+  backupTempUnit=getSystemTempUnit();
   setSystemTempUnit(mode_Celsius);
-  backupTip =  *Currtip;
+  backup_tip();
 
   __disable_irq();
   Currtip->calADC_At_250 = systemSettings.Profile.Cal250_default;
@@ -293,28 +293,28 @@ static void Cal_Start_init(screen_t *scr) {
 static int Cal_Start_ProcessInput(struct screen_t *scr, RE_Rotation_t input, RE_State_t *s) {
   update = update_GUI_Timer();
   update_draw |= update;
-  updateAmbientTemp();
-  refreshOledDim();
+  wakeOledDim();
   handleOledDim();
+  updatePlot();
+  updateScreenTimer(input);
 
-  if(input!=Rotate_Nothing){
-    screen_timer = current_time;
-  }
   if(current_state>=cal_finished){
-    if((current_time-screen_timer)>15000 || input==Click){
-      return screen_calibration;
+    if(checkScreenTimer(15000) || input==Click){
+      return last_scr;
     }
   }
   else{
-    if((current_time-screen_timer)>300000){   // 5min inactivity
+    if(checkScreenTimer(CAL_TIMEOUT)){
+      setUserTemperature(backupTemp);
+      setCalibrationMode(disable);
       setCurrentMode(mode_sleep);
-      return screen_calibration;
+      return screen_main;
     }
   }
 
-  if(GetIronError()){
+  if(isIronInError()){
     error=1;
-    return screen_calibration;
+    return last_scr;
   }
 
   if(tempReady){
@@ -345,10 +345,9 @@ static int Cal_Start_ProcessInput(struct screen_t *scr, RE_Rotation_t input, RE_
 }
 
 static void Cal_Start_OnExit(screen_t *scr) {
+  tempReady = 0;
   setSystemTempUnit(backupTempUnit);
-  __disable_irq();
-  *Currtip = backupTip;
-  __enable_irq();
+  restore_tip();
 }
 
 static uint8_t Cal_Start_draw(screen_t *scr){
@@ -357,14 +356,14 @@ static uint8_t Cal_Start_draw(screen_t *scr){
   if(update_draw){
     update_draw=0;
 
-    FillBuffer(BLACK, fill_dma);
+    fillBuffer(BLACK, fill_dma);
     scr->refresh=screen_Erased;
     u8g2_SetDrawColor(&u8g2, WHITE);
     u8g2_SetFont(&u8g2, u8g2_font_menu);
 
     if(current_state<cal_finished){
       uint8_t s = current_state;
-      u8g2_DrawUTF8(&u8g2, 0, 50, systemSettings.Profile.tip[systemSettings.Profile.currentTip].name);  // Draw current tip name
+      u8g2_DrawUTF8(&u8g2, 0, 50, systemSettings.Profile.tip[systemSettings.currentTip].name);  // Draw current tip name
       u8g2_DrawUTF8(&u8g2, 8, 6, strings[lang].CAL_Step);            // Draw current cal state
 
       if(current_state<cal_input_250){
@@ -405,7 +404,7 @@ static void Cal_Start_create(screen_t *scr) {
   newWidget(&w,widget_button,scr);
   Widget_Cal_Button=w;
   w->width = 65;
-  w->posX = OledWidth - w->width - 1;
+  w->posX = displayWidth - w->width - 1;
   w->posY = 48;
   ((button_widget_t*)w->content)->displayString=strings[lang]._CANCEL;
   ((button_widget_t*)w->content)->selectable.tab=0;
@@ -434,15 +433,13 @@ static void Cal_Start_create(screen_t *scr) {
 
 static void Cal_Settings_init(screen_t *scr) {
   default_init(scr);
-  comboResetIndex(Screen_calibration_settings.widgets);
-
-  updateAmbientTemp();
+  comboResetIndex(Screen_calibration_settings.current_widget);
   zero_state = zero_disabled;
   calAdjust[cal_250] = systemSettings.Profile.Cal250_default;
   calAdjust[cal_400] = systemSettings.Profile.Cal400_default;
   calAdjust[cal_0] = systemSettings.Profile.calADC_At_0;
   backup_calADC_At_0 = systemSettings.Profile.calADC_At_0;
-  backupTip= *Currtip;
+  backup_tip();
 
   __disable_irq();
   Currtip->calADC_At_250 = calAdjust[cal_250];
@@ -451,23 +448,22 @@ static void Cal_Settings_init(screen_t *scr) {
 }
 
 static void Cal_Settings_OnExit(screen_t *scr) {
-  __disable_irq();
-  *Currtip = backupTip;
+  restore_tip();
   systemSettings.Profile.calADC_At_0 = backup_calADC_At_0;
-  __enable_irq();
 }
 
 static int Cal_Settings_ProcessInput(struct screen_t *scr, RE_Rotation_t input, RE_State_t *s) {
-  updateAmbientTemp();
-
-  if(GetIronError()){
+  if(isIronInError()){
     error=1;
-    return screen_calibration;
+    return last_scr;
   }
-  refreshOledDim();
+  wakeOledDim();
   handleOledDim();
+  updatePlot();
+  updateScreenTimer(input);
+
   if(update || update_GUI_Timer()){
-    scr->widgets->refresh=refresh_triggered;
+    scr->current_widget->refresh=refresh_triggered;
     switch(zero_state){
       case zero_disabled:
         sprintf(zeroStr, "%s%4u", strings[lang].CAL_ZeroSet, backup_calADC_At_0 );
@@ -480,23 +476,18 @@ static int Cal_Settings_ProcessInput(struct screen_t *scr, RE_Rotation_t input, 
         break;
     }
   }
-  if(input!=Rotate_Nothing){
-    screen_timer=current_time;
-  }
-  if((current_time-screen_timer)>300000){     // 5 min inactivity
+
+  if(checkScreenTimer(CAL_TIMEOUT)){
+    setUserTemperature(backupTemp);
+    setCalibrationMode(disable);
     setCurrentMode(mode_sleep);
-    return screen_calibration;
+    return screen_main;
   }
 
   if(input==Rotate_Decrement_while_click){
    comboBox_item_t *item = ((comboBox_widget_t*)scr->current_widget->content)->currentItem;
-    if(item->type==combo_Editable || item->type==combo_MultiOption){
-      if(item->widget->selectable.state!=widget_edit){
-        return screen_calibration;
-      }
-    }
-    else{
-      return screen_calibration;
+    if(item->type!=combo_Editable || (item->type==combo_Editable && item->widget->selectable.state!=widget_edit)){
+        return last_scr;
     }
   }
   return default_screenProcessInput(scr, input, s);
@@ -516,8 +507,8 @@ static void Cal_Settings_create(screen_t *scr){
   newComboEditable(w, strings[lang]._Cal_250, &edit, &Cal_Combo_Adjust_C250);
   edit->inputData.reservedChars=4;
   edit->inputData.getData = &getCal250;
-  edit->big_step = 100;
-  edit->step = 20;
+  edit->big_step = 20;
+  edit->step = 10;
   edit->setData = (void (*)(void *))&setCal250;
   edit->max_value = 4000;
   edit->min_value = 0;
@@ -526,15 +517,15 @@ static void Cal_Settings_create(screen_t *scr){
   newComboEditable(w, strings[lang]._Cal_400, &edit, &Cal_Combo_Adjust_C400);
   edit->inputData.reservedChars=4;
   edit->inputData.getData = &getCal400;
-  edit->big_step = 100;
-  edit->step = 20;
+  edit->big_step = 20;
+  edit->step = 10;
   edit->setData = (void (*)(void *))&setCal400;
   edit->max_value = 4000;
   edit->min_value = 0;
   edit->selectable.processInput=&Cal400_processInput;
 
   newComboAction(w, strings[lang]._SAVE, &Cal_Settings_SaveAction, NULL);
-  newComboScreen(w, strings[lang]._CANCEL, screen_calibration, NULL);
+  newComboScreen(w, strings[lang]._CANCEL, last_scr , NULL);
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------
